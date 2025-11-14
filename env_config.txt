@@ -1,0 +1,18 @@
+# Baltimore Health Dashboard Chatbot - Environment Configuration
+# Copy this file to .env and fill in your actual values
+
+# OpenAI API Key for enhanced AI chatbot responses
+# Get your API key from: https://platform.openai.com/api-keys
+# Leave empty to use basic keyword-based responses only
+OPENAI_API_KEY=
+
+# Optional: Custom data directories (if different from defaults)
+# DATA_RAW_DIR=./data/raw
+# DATA_GEO_DIR=./data/geo
+# OUTPUT_DIR=./output
+
+# Instructions:
+# 1. Copy this file to .env: cp env_config.txt .env
+# 2. Fill in your OpenAI API key if you want enhanced AI responses
+# 3. The script will automatically load .env file if python-dotenv is installed
+# 4. The chatbot will work with basic functionality even without an API key
