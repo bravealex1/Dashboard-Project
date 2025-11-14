@@ -1,0 +1,5 @@
+cat <<'EOF' >> .gitignore
+# Ignore everything under data/
+data/
+!data/.gitkeep
+EOF
