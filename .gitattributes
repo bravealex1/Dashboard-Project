@@ -1,3 +1,9 @@
 *.psd filter=lfs diff=lfs merge=lfs -text
 .venv/lib/python3.12/site-packages/lancedb/_lancedb.abi3.so filter=lfs diff=lfs merge=lfs -text
 .venv/lib/python3.12/site-packages/lance/lance.abi3.so filter=lfs diff=lfs merge=lfs -text
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+!.env.sample
