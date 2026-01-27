@@ -22,9 +22,9 @@
    - [Data Architecture](#data-architecture)
 5. [AI Integration: Multi-Agent Framework Implementation](#ai-integration-multi-agent-framework-implementation)
    - [CrewAI for Economic Dashboard](#crewai-for-economic-dashboard)
-   - [AutoGen for Health Dashboard](#autogen-for-health-dashboard)
+   - [Agno for Health Dashboard](#agno-for-health-dashboard)
+   - [Framework Comparison](#framework-comparison)
    - [Custom Tool Development](#custom-tool-development)
-   - [Chatbot Functionality](#chatbot-functionality)
 6. [Technical Implementation Details](#technical-implementation-details)
 7. [Challenges and Solutions](#challenges-and-solutions)
 8. [Results and Insights](#results-and-insights)
@@ -38,14 +38,14 @@
 
 This capstone project presents a comprehensive economic and health intelligence system for Baltimore City, Maryland. The project consists of two integrated dashboards that provide real-time access to critical public health and economic indicators. By combining data from the U.S. Census Bureau, Bureau of Labor Statistics (BLS), and Federal Reserve Economic Data (FRED), I've created an interactive platform that allows policymakers, researchers, and community members to explore Baltimore's socioeconomic landscape.
 
-The system features innovative AI-powered chatbots using advanced multi-agent frameworks: **CrewAI** for the Economic Dashboard (specialized agents for data fetching, analysis, and communication) and **Microsoft AutoGen** for the Health Dashboard (conversational multi-agent system with tool execution). These frameworks enable users to query complex datasets through natural language, representing a significant advancement in how communities can interact with public data—making sophisticated analysis accessible to non-technical users.
+The system features innovative AI-powered chatbots using advanced multi-agent frameworks: **CrewAI** for the Economic Dashboard (specialized agents for data fetching, analysis, and communication) and **Agno** for the Health Dashboard (high-performance single-agent architecture with tool execution and conversation persistence). These frameworks enable users to query complex datasets through natural language, representing a significant advancement in how communities can interact with public data—making sophisticated analysis accessible to non-technical users.
 
 **Key Achievements:**
-- Integrated 3 major health metrics (broadband access, child poverty, education) across 4 years of census tract data
-- Connected to 25+ economic indicators from BLS and FRED APIs
-- Developed intelligent AI assistant capable of answering complex queries about Baltimore's economy
-- Created interactive geographic visualizations with 200+ Baltimore City census tracts
-- Built scalable architecture supporting real-time data updates
+- Integrated 3 major health metrics (broadband access, child poverty, education) across 4 years of census tract data for 200+ Baltimore City census tracts
+- Connected to 25+ economic indicators from BLS and FRED APIs with real-time updates
+- Implemented two distinct AI architectures optimized for different use cases (CrewAI for collaborative analysis, Agno for fast interactive queries)
+- Created interactive geographic visualizations with modern, accessible UI design
+- Built scalable architecture with conversation persistence and graceful fallback modes
 
 ---
 
@@ -684,255 +684,292 @@ This modular approach makes the code maintainable and allows easy addition of ne
 
 ---
 
-## AI Integration: Agentic Workflow Implementation
+## AI Integration: Multi-Agent Framework Implementation
 
-This section represents the most innovative aspect of my project—creating an AI assistant that can intelligently interact with economic data.
+This section represents the most innovative aspect of my project—creating AI assistants that can intelligently interact with both economic and health data using purpose-built frameworks.
 
 ### What is an Agentic Workflow?
 
-Traditional chatbots follow scripted responses: "If user says X, respond with Y." Agentic workflows are fundamentally different. An agent:
+Traditional chatbots follow scripted responses. Agentic workflows are fundamentally different. An agent:
 
-1. **Understands Intent** - Uses a language model (GPT-4) to interpret what the user wants
+1. **Understands Intent** - Uses GPT-4o to interpret what the user wants
 2. **Selects Tools** - Decides which functions/APIs to call based on the query
 3. **Executes Actions** - Runs the selected tools with appropriate parameters
 4. **Synthesizes Response** - Combines tool outputs into a coherent answer
 
-Think of it as giving the chatbot "hands" to actually fetch and analyze data, not just talk about it.
+I implemented two different agent frameworks, each optimized for its specific use case.
 
 ### CrewAI for Economic Dashboard
 
-For the BLS/FRED Economic Dashboard, I chose **CrewAI** because it provides a role-based multi-agent orchestration framework. CrewAI is ideal for scenarios where specialized agents need to collaborate on complex tasks.
+For the BLS/FRED Economic Dashboard, I chose **CrewAI** because it provides a role-based multi-agent orchestration framework. CrewAI is ideal for scenarios where specialized agents need to collaborate on complex tasks through a sequential workflow.
 
 #### Step 1: Installing Dependencies
 
 ```bash
-pip install crewai crewai-tools
+pip install crewai
 ```
 
-CrewAI provides both the core framework and additional tools for agent collaboration.
+CrewAI provides the core framework for agent collaboration. Note that the tool decorator is included in the main crewai package, not a separate crewai-tools package.
 
 #### Step 2: Environment Configuration
 
-The agents require an OpenAI API key for the language model:
+The agents require two environment variables:
 
 ```
 OPENAI_API_KEY=sk-your-key-here
+CHROMA_OPENAI_API_KEY=sk-your-key-here
 ```
 
-Stored in `.env` and loaded with `python-dotenv`.
+The first is for the language model, and the second is for ChromaDB embeddings which power the agent memory system. Both can use the same OpenAI key. These are stored in `.env` and loaded with `python-dotenv`.
 
-#### Step 3: Multi-Agent Architecture
+#### Step 3: Tool Creation with CrewAI
 
-CrewAI uses three specialized agents that work together:
+CrewAI uses custom tools that wrap Python functions. Each tool has a name and docstring that helps the agent understand when to use it:
+
+```python
+from crewai.tools import tool
+
+@tool("Get unemployment data")
+def get_unemployment_data() -> str:
+    """Fetch latest unemployment statistics for Baltimore MSA from BLS LAUS."""
+    # Function fetches data from BLS API
+    # Returns formatted string with results
+    return formatted_results
+
+@tool("Get inflation data")
+def get_cpi_data() -> str:
+    """Fetch Consumer Price Index and inflation rate for Baltimore-Washington area from BLS."""
+    # Function fetches CPI data and calculates inflation rate
+    return formatted_results
+```
+
+I created five specialized tools:
+- get_unemployment_data - BLS LAUS unemployment statistics
+- get_cpi_data - Consumer Price Index and inflation
+- get_industry_employment - Employment by sector from BLS CES
+- get_home_price_index - FHFA housing data from FRED
+- get_county_unemployment - Maryland county unemployment map data
+
+#### Step 4: Multi-Agent Architecture
+
+CrewAI uses three specialized agents that work in sequence:
 
 **a) Economic Data Fetcher Agent**
 
 ```python
 from crewai import Agent
 
-data_fetcher = Agent(
+fetcher = Agent(
     role="Economic Data Fetcher",
-    goal="Retrieve accurate and timely economic data from BLS and FRED APIs",
-    backstory="""You are a specialist in accessing economic databases. You excel at 
-    retrieving unemployment rates, employment statistics, inflation data, and housing prices 
-    for the Baltimore-Columbia-Towson Metropolitan Statistical Area.""",
-    verbose=False,
-    allow_delegation=True
-)
-```
-
-**b) Economic Data Analyzer Agent**
-
-```python
-data_analyzer = Agent(
-    role="Economic Data Analyzer",
-    goal="Analyze and interpret economic trends and statistics",
-    backstory="""You are an economic analyst who specializes in interpreting labor market 
-    data, price trends, and housing statistics. You can calculate year-over-year changes, 
-    identify trends, and compare metrics across time periods.""",
-    verbose=False,
-    allow_delegation=True
-)
-```
-
-**c) Economic Data Communicator Agent**
-
-```python
-data_explainer = Agent(
-    role="Economic Data Communicator",
-    goal="Explain economic data clearly to users",
-    backstory="""You are an expert at translating complex economic statistics into clear, 
-    understandable insights. You explain data source differences, clarify geographic 
-    coverage, and help users understand what the numbers mean.""",
+    goal="Use the provided tools to gather the exact Baltimore economic metrics requested by the user.",
+    backstory="You specialize in querying BLS LAUS, BLS CES, CPI-U, FRED housing data, and county unemployment cross-sections for the Baltimore region.",
+    tools=self.tools,
     verbose=False,
     allow_delegation=False
 )
 ```
 
-**d) Crew Orchestration**
+This agent calls the appropriate tools to fetch raw data from BLS and FRED APIs.
+
+**b) Economic Data Analyst Agent**
 
 ```python
-from crewai import Crew, Task
-
-crew = Crew(
-    agents=[data_fetcher, data_analyzer, data_explainer],
-    tasks=[],  # Tasks assigned dynamically per query
-    verbose=False
+analyst = Agent(
+    role="Economic Data Analyst",
+    goal="Inspect retrieved metrics, calculate trends, and highlight the most relevant economic context for the user.",
+    backstory="You interpret labor market, price, and housing indicators for Baltimore and summarize what the numbers mean.",
+    verbose=False,
+    allow_delegation=False
 )
 ```
 
-### AutoGen for Health Dashboard
+This agent reviews the fetched data and identifies trends, patterns, and notable changes.
 
-For the Baltimore Health Dashboard, I chose **Microsoft AutoGen** because it excels at conversational multi-agent systems with code execution capabilities.
+**c) Economic Data Communicator Agent**
+
+```python
+communicator = Agent(
+    role="Economic Data Communicator",
+    goal="Deliver a clear, user-friendly answer that cites metrics, dates, geographies, and data sources.",
+    backstory="You craft concise explanations so the user quickly understands Baltimore's economic picture.",
+    verbose=False,
+    allow_delegation=False
+)
+```
+
+This agent formats the analysis into a clear response for the user.
+
+#### Step 5: Task-Based Workflow
+
+Each user query creates three sequential tasks:
+
+```python
+from crewai import Task
+
+# Task 1: Fetch Data
+fetch_task = Task(
+    description="Identify which economic datasets are needed. Call the available tools to fetch the actual numbers.",
+    expected_output="Structured bullet list with fetched metrics, each including value, unit, geography, date, and data source.",
+    agent=fetcher,
+    tools=self.tools
+)
+
+# Task 2: Analyze Data
+analyze_task = Task(
+    description="Review the fetcher's output and synthesize insights that answer the user's question.",
+    expected_output="Numbered list of insights referencing the fetched metrics and explaining their significance.",
+    agent=analyst
+)
+
+# Task 3: Communicate Results
+respond_task = Task(
+    description="Compose the final response for the user. Cite data sources and years, and explain the significance.",
+    expected_output="Well-structured response with 2-4 short paragraphs or bullet points summarizing the metrics, trends, and caveats.",
+    agent=communicator
+)
+```
+
+Each task has a description, expected output, and assigned agent. Tasks run sequentially, with later tasks accessing earlier task outputs.
+
+#### Step 6: Crew Orchestration with Memory and Embeddings
+
+```python
+from crewai import Crew, Process
+
+crew = Crew(
+    agents=[fetcher, analyst, communicator],
+    tasks=[fetch_task, analyze_task, respond_task],
+    process=Process.sequential,
+    verbose=True,
+    memory=True,
+    embedder={
+        "provider": "openai",
+        "config": {
+            "model": "text-embedding-3-small"
+        }
+    }
+)
+
+result = crew.kickoff()
+```
+
+Key configuration choices:
+- **Process.sequential**: Tasks run in order, each building on previous outputs
+- **memory=True**: Enables agents to retain context across the conversation
+- **embedder**: Uses OpenAI embeddings (text-embedding-3-small model) to convert text to vectors for semantic understanding
+- **verbose=True**: Shows agent reasoning steps for debugging
+
+The embedding model is critical because it allows agents to understand semantic relationships between queries and maintain conversation context.
+
+### Agno for Health Dashboard
+
+For the Baltimore Health Dashboard, I chose **Agno** because it excels at fast, lightweight single-agent architectures with built-in persistence and tool integration.
+
+#### Why Agno?
+
+Agno is a high-performance multi-agent framework built for speed, privacy, and scale:
+- 529x faster than LangGraph, 70x faster than CrewAI for agent instantiation
+- 24x less memory than LangGraph, 10x less than CrewAI
+- Single Agent class with built-in memory and tool support
+- SQLite database integration for conversation persistence
+- Production-ready with FastAPI runtime included
 
 #### Step 1: Installing Dependencies
 
 ```bash
-pip install pyautogen
+pip install agno>=2.2.0
 ```
 
-#### Step 2: AutoGen Architecture
+#### Step 2: Agno Architecture
 
-AutoGen uses a different pattern with Assistant and UserProxy agents:
+Agno uses a simplified single-agent pattern optimized for interactive queries:
 
-**a) AssistantAgent** (powered by GPT-4o)
+**a) Agent Initialization**
 
 ```python
-from autogen import AssistantAgent
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools import tool
+from agno.db.sqlite import SqliteDb
 
-assistant = AssistantAgent(
+# Create database for conversation persistence
+db = SqliteDb(db_file="data/baltimore_health_chatbot.db")
+
+# Create agent with tools
+agent = Agent(
     name="BaltimoreHealthAssistant",
-    system_message="""You are a helpful assistant for the Baltimore City Health Dashboard.
-    You can help users understand health metrics data including broadband access, 
-    child poverty rates, and educational attainment.""",
-    llm_config={
-        "config_list": [{
-            "model": "gpt-4o",
-            "api_key": openai_key,
-            "temperature": 0
-        }]
-    }
+    model=OpenAIChat(id="gpt-4o", api_key=openai_key),
+    tools=[query_metric_data, get_tract_info, find_extreme_values],
+    db=db,
+    description="You are a helpful assistant for the Baltimore City Health Dashboard.",
+    instructions=[
+        "Always specify which metric, year, and location you're discussing",
+        "Use tools to fetch real data instead of making assumptions"
+    ],
+    markdown=True,
+    add_history_to_context=True,
+    num_history_messages=10,
+    read_chat_history=True
 )
 ```
 
-**b) UserProxyAgent** (executes functions)
+**b) Tool Registration**
 
 ```python
-from autogen import UserProxyAgent
-
-user_proxy = UserProxyAgent(
-    name="UserProxy",
-    human_input_mode="NEVER",
-    max_consecutive_auto_reply=5,
-    code_execution_config=False,
-    function_map={
-        "query_metric_data": self._query_metric_data,
-        "get_tract_info": self._get_tract_info,
-        "find_extreme_values": self._find_extreme_values,
-        # ... more functions
-    }
-)
+@tool
+def query_metric_data(query: str) -> str:
+    """Query health metric data by location, metric type, or year."""
+    # Implementation
+    return results
 ```
 
-**c) Conversation Initiation**
+**c) Running the Agent**
 
 ```python
-# AutoGen initiates conversation between agents
-user_proxy.initiate_chat(
-    assistant,
-    message=user_message,
-    silent=True
-)
+# Simple API - just run with the message
+response = agent.run(user_message)
 ```
 
-**b) Tools**
+**Key Advantages of Agno:**
+- Fast performance for real-time interactive queries
+- Built-in conversation persistence across sessions
+- Simple API reduces code complexity
+- Ideal for health dashboard where speed matters
+- Automatic tool selection and execution
 
-Tools are Python functions wrapped with metadata describing what they do:
+### Framework Comparison
 
-```python
-from langchain_core.tools import Tool
-
-unemployment_tool = Tool(
-    name="get_latest_unemployment",
-    func=self._tool_get_unemployment,
-    description="""Get the latest unemployment rate and labor force statistics 
-    for Baltimore MSA. Use this when user asks about: unemployment, jobless rate, 
-    labor force, employment situation. Returns current unemployment rate, 
-    number unemployed, employed, and labor force size."""
-)
-```
-
-The `description` is critical—it tells the agent when to use this tool.
-
-**c) Prompt Template**
-
-This guides the agent's behavior:
-
-```python
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-
-system_message = """You are an expert economic data assistant for Baltimore, Maryland.
-
-**Your Mission:** Help users understand Baltimore-Columbia-Towson MSA economic data 
-from BLS and FRED.
-
-**Geographic Context:**
-- Primary Region: Baltimore-Columbia-Towson, MD Metropolitan Statistical Area (MSA 12580)
-- Counties Covered: Baltimore City + Baltimore, Carroll, Anne Arundel, Howard, Harford, Queen Anne's
-- CPI Area: Baltimore-Washington (broader, includes DC metro)
-
-**When Answering:**
-- Always specify the geographic region (MSA, state, county, etc.)
-- Mention the data source (BLS LAUS, BLS CES, BLS CPI, FRED, etc.)
-- Include dates for latest values
-- Be concise but informative
-
-Use your tools to fetch live data when needed. Be helpful and precise!
-"""
-
-prompt = ChatPromptTemplate.from_messages([
-    ("system", system_message),
-    MessagesPlaceholder(variable_name="chat_history"),
-    ("human", "{input}"),
-    MessagesPlaceholder(variable_name="agent_scratchpad")
-])
-```
-
-The `MessagesPlaceholder` objects allow the agent to maintain conversation context and track its reasoning process.
-
-#### Step 4: Creating the Agent
-
-```python
-from langchain_classic.agents import create_openai_functions_agent, AgentExecutor
-
-agent = create_openai_functions_agent(llm, tools, prompt)
-
-agent_executor = AgentExecutor(
-    agent=agent,
-    tools=tools,
-    verbose=False,  # Set to True for debugging
-    max_iterations=3,  # Prevent infinite loops
-    handle_parsing_errors=True  # Graceful error handling
-)
-```
-
-The `AgentExecutor` runs the agent, handles tool calls, and manages the conversation loop.
+| Feature | CrewAI (Economic) | Agno (Health) |
+|---------|-------------------|---------------|
+| **Architecture** | Multi-agent with roles | Single agent with tools |
+| **Use Case** | Complex collaborative analysis | Fast interactive queries |
+| **Performance** | Moderate (task orchestration) | Very fast (optimized for speed) |
+| **Memory** | Embedding-based context | SQLite conversation history |
+| **API Complexity** | High (agents, tasks, crews) | Low (agent.run) |
+| **Tool Registration** | @tool decorator | @tool decorator |
+| **Best For** | Multi-step workflows | Real-time Q&A |
 
 ### Custom Tool Development
 
-I developed six specialized tools for the economic dashboard:
+I developed specialized tools for both dashboards using the @tool decorator pattern:
 
-#### Tool 1: Get Latest Unemployment
+**For CrewAI Economic Dashboard (5 tools):**
+
+#### Tool 1: Get Unemployment Data
 
 ```python
-def _tool_get_unemployment(self, query: str = "") -> str:
-    """Fetch current unemployment statistics from BLS"""
+from crewai.tools import tool
+
+@tool("Get unemployment data")
+def get_unemployment_data() -> str:
+    """Fetch latest unemployment statistics for Baltimore MSA from BLS LAUS."""
     try:
         # Call BLS API for LAUS data
         data = bls_fetch_timeseries(
             [LAUS_UR_MSA, LAUS_UNEMP_MSA, LAUS_EMP_MSA, LAUS_LF_MSA],
             START_YEAR, END_YEAR,
-            registration_key=self.bls_key
+            registration_key=bls_key, 
+            catalog=True
         )
         
         # Convert to DataFrame
@@ -945,305 +982,209 @@ def _tool_get_unemployment(self, query: str = "") -> str:
         ur_val = latest[latest["series_id"] == LAUS_UR_MSA]["value"].iloc[0]
         ur_date = latest[latest["series_id"] == LAUS_UR_MSA]["date"].iloc[0]
         
-        return f"""**Latest Labor Market Data (Baltimore-Columbia-Towson MSA)**
-- **Source:** BLS Local Area Unemployment Statistics (LAUS)
-- **Date:** {ur_date.date()}
-
-- **Unemployment Rate:** {ur_val:.1f}%
-- **Unemployed Persons:** {int(unemp_val):,}
-- **Employed Persons:** {int(emp_val):,}
-- **Labor Force:** {int(lf_val):,}
-
-*Geographic Coverage: Baltimore City + 6 surrounding counties*"""
+        # Extract values from result dictionary
+        ur_date, ur_val = result_dict.get(LAUS_UR_MSA, ("n/a", None))
+        unemp_val = result_dict.get(LAUS_UNEMP_MSA, (None, 0))[1]
+        emp_val = result_dict.get(LAUS_EMP_MSA, (None, 0))[1]
+        lf_val = result_dict.get(LAUS_LF_MSA, (None, 0))[1]
+        
+        return f"Baltimore MSA Labor Market (BLS LAUS, {ur_date}): Unemployment Rate: {ur_val:.1f}%, Unemployed: {int(unemp_val):,}, Employed: {int(emp_val):,}, Labor Force: {int(lf_val):,}"
     
     except Exception as e:
         return f"Error fetching unemployment data: {e}"
 ```
 
-**Key Design Decisions:**
+**Key Implementation Details:**
 
-1. **Markdown Formatting** - The tool returns formatted markdown strings that look good in the chat interface
-2. **Error Handling** - Wrapping in try/except ensures the agent doesn't crash if the API fails
-3. **Source Attribution** - Every response explicitly states the data source and date
-4. **Geographic Context** - Reminds users which region the data covers
+The @tool decorator registers the function with CrewAI. The function name and docstring help agents understand when to use it. Tools return formatted strings that agents can incorporate into their responses. Error handling ensures graceful failures when APIs are unavailable.
 
-#### Tool 2: Get CPI and Inflation
+#### Tool 2: Get Inflation Data
 
-Similar structure, but calculates year-over-year inflation rate:
+Calculates Consumer Price Index and year-over-year inflation:
 
 ```python
-def _tool_get_cpi(self, query: str = "") -> str:
+@tool("Get inflation data")
+def get_cpi_data() -> str:
+    """Fetch Consumer Price Index and inflation rate for Baltimore-Washington area from BLS."""
+    try:
     data = bls_fetch_timeseries([CPIU_BALT_ALL], START_YEAR, END_YEAR, ...)
     df = bls_to_dataframe(data).sort_values("date")
-    
-    latest = df.iloc[-1]
-    
-    # Calculate 12-month change
-    yoy_change = df.set_index("date")["value"].pct_change(12).loc[latest["date"]]
-    
-    return f"""**Latest Inflation Data (Baltimore-Washington Area)**
-- **CPI Index:** {latest['value']:.1f} (Base: 1982-84=100)
-- **Annual Inflation Rate:** {yoy_change*100:.1f}% (Year-over-Year)
-..."""
+        last = df.iloc[-1]
+        
+        # Calculate 12-month percentage change
+        yoy = df.set_index("date")["value"].pct_change(12).loc[last["date"]]
+        
+        return f"CPI-U Baltimore-Washington Area (BLS, {last['date'].date().isoformat()}): Index: {last['value']:.1f}, Annual Inflation Rate: {yoy*100:.1f}%"
+    except Exception as e:
+        return f"Error fetching CPI data: {e}"
 ```
 
-The `.pct_change(12)` calculates the percentage change from 12 periods ago (12 months for monthly data).
+#### Tool 3: Get Industry Employment
 
-#### Tool 3: Get Employment by Industry
-
-Fetches CES data for multiple industries and formats as a list:
+Fetches employment by sector from BLS Current Employment Statistics:
 
 ```python
-def _tool_get_industry_employment(self, query: str = "") -> str:
-    ces_series = [CES_TNF_MSA, CES_MANUF_MSA, CES_TRADE_MSA, ...]
-    data = bls_fetch_timeseries(ces_series, ...)
+@tool("Get industry employment")
+def get_industry_employment() -> str:
+    """Fetch employment by industry sector for Baltimore MSA from BLS CES."""
+    try:
+        ces_series = [CES_TNF_MSA, CES_MANUF_MSA, CES_TRADE_MSA, 
+                     CES_PROF_MSA, CES_HEALTH_MSA, CES_LEISURE_MSA, CES_GOVT_MSA]
+        data = bls_fetch_timeseries(ces_series, START_YEAR, END_YEAR, ...)
     df = bls_to_dataframe(data)
-    
-    latest = df.groupby("series_id").tail(1)
-    
-    result = "**Employment by Industry (Baltimore MSA)**\n"
-    for _, row in latest.iterrows():
-        industry_name = INDUSTRY_NAMES[row["series_id"]]
-        result += f"- **{industry_name}:** {int(row['value']):,} jobs\n"
-    
-    return result
+        last = df.sort_values("date").groupby("series_id").tail(1)
+        
+        # Map series IDs to readable names
+        names = {
+            CES_TNF_MSA: "Total Nonfarm",
+            CES_MANUF_MSA: "Manufacturing",
+            CES_TRADE_MSA: "Retail Trade",
+            # ... more mappings
+        }
+        
+        result = f"Baltimore MSA Employment by Industry (BLS CES, {last.iloc[0]['date'].date().isoformat()}): "
+        parts = [f"{names.get(row['series_id'])}: {int(row['value']):,}" 
+                for _, row in last.iterrows()]
+        return result + ", ".join(parts)
+    except Exception as e:
+        return f"Error fetching industry employment: {e}"
 ```
-
-The `:,` format specifier adds thousands separators (e.g., "1,234,567").
 
 #### Tool 4: Get Home Price Index
 
-Fetches housing data from FRED and calculates annual change:
+Fetches FHFA housing data and calculates changes:
 
 ```python
-def _tool_get_hpi(self, query: str = "") -> str:
-    hpi_series = "ATNHPIUS12580Q"
-    df = fred_series_observations(hpi_series, self.fred_key, ...)
-    
-    latest = df.iloc[-1]
-    
-    # Calculate year-over-year change (4 quarters ago)
+@tool("Get home price index")
+def get_home_price_index() -> str:
+    """Fetch FHFA Home Price Index for Baltimore MSA from FRED."""
+    try:
+        hpi_series = FRED_HOUSING_SERIES["Home Price Index (FHFA)"]["series_id"]
+        df = fred_series_observations(hpi_series, fred_key, start=f"{START_YEAR}-01-01")
+        df = df.sort_values("date")
+        last = df.iloc[-1]
+        
+        # Calculate year-over-year change if enough data
     if len(df) >= 5:
-        yoy_change = ((latest["value"] / df.iloc[-5]["value"]) - 1) * 100
-        yoy_str = f"\n- **Year-over-Year Change:** {yoy_change:+.1f}%"
+            yoy_change = ((last["value"] / df.iloc[-5]["value"]) - 1) * 100
+            return f"Baltimore MSA Home Price Index (FHFA via FRED, {last['date'].date().isoformat()}): HPI: {last['value']:.2f}, Year-over-Year Change: {yoy_change:+.1f}%"
     else:
-        yoy_str = ""
-    
-    return f"""**Home Price Index (Baltimore MSA)**
-- **HPI:** {latest['value']:.2f} (Base: 1995 Q1=100){yoy_str}
-..."""
+            return f"Baltimore MSA Home Price Index (FHFA via FRED, {last['date'].date().isoformat()}): HPI: {last['value']:.2f}"
+    except Exception as e:
+        return f"Error fetching home price data: {e}"
 ```
 
-The `df.iloc[-5]` gets the value from 4 quarters ago (since iloc[-1] is current quarter).
+#### Tool 5: Get County Unemployment
 
-#### Tool 5: Get County Unemployment Map Data
-
-This is more complex because it uses FRED Maps API:
+Fetches Maryland county unemployment from FRED Maps API:
 
 ```python
-def _tool_get_county_map(self, query: str = "") -> str:
-    # Fetch cross-section data for all Maryland counties
+@tool("Get county unemployment map")
+def get_county_unemployment() -> str:
+    """Fetch unemployment rates for all Maryland counties from FRED Maps."""
+    try:
     cross, _, used_date, endpoint = fred_maps_series_cross_section(
-        EXAMPLE_FRED_COUNTY_UR, self.fred_key, date=None
-    )
-    
-    # Filter to Maryland (FIPS starts with "24")
-    md = cross[cross["code"].str.startswith("24")]
-    
-    # Get top 5 highest and 5 lowest
+            EXAMPLE_FRED_COUNTY_UR, fred_key, date=None
+        )
+        cross = _normalize_code_column(cross)
+        
+        if cross.empty or "code" not in cross.columns:
+            return "Could not retrieve Maryland county unemployment data."
+        
+        # Filter to Maryland counties (FIPS code starts with "24")
+        md = cross[cross["code"].astype(str).str.zfill(5).str[:2] == "24"].copy()
+        if md.empty:
+            return "No Maryland counties found in FRED Maps data."
+        
+        # Sort and get highest and lowest unemployment counties
     md_sorted = md.sort_values("value", ascending=False)
     top5 = md_sorted.head(5)
     bottom5 = md_sorted.tail(5)
     
-    result = f"""**Maryland County Unemployment Rates**
-- **Date:** {used_date}
-
-**Highest Unemployment:**
-"""
-    for _, row in top5.iterrows():
-        result += f"- {row['region']}: {row['value']:.1f}%\n"
-    
-    result += "\n**Lowest Unemployment:**\n"
-    for _, row in bottom5.iterrows():
-        result += f"- {row['region']}: {row['value']:.1f}%\n"
-    
+        result = f"Maryland County Unemployment (FRED Maps, {used_date or 'Latest'}): "
+        result += "Highest: " + ", ".join([f"{row['region']}: {row['value']:.1f}%" 
+                                          for _, row in top5.iterrows()])
+        result += " | Lowest: " + ", ".join([f"{row['region']}: {row['value']:.1f}%" 
+                                            for _, row in bottom5.iterrows()])
     return result
+    except Exception as e:
+        return f"Error fetching county data: {e}"
 ```
 
-This provides immediate insights into geographic inequality across the state.
+This tool provides geographic context by showing unemployment variation across Maryland counties.
 
-#### Tool 6: Compare BLS vs FRED Sources
+#### Tool Design Philosophy
 
-This educational tool explains the difference between data sources:
+All five tools follow consistent patterns:
+
+1. **Single Responsibility**: Each tool fetches one category of data
+2. **Error Handling**: Try/except blocks prevent agent crashes
+3. **Structured Output**: Returns formatted strings with clear labels
+4. **Source Attribution**: Always cites data source and date
+5. **Geographic Context**: Specifies region coverage (MSA, state, etc.)
+
+The tools are designed to be composable. The fetcher agent can call multiple tools, the analyst agent can identify patterns across tool outputs, and the communicator agent synthesizes everything into a coherent response.
+
+**For Agno Health Dashboard (5 tools):**
 
 ```python
-def _tool_compare_sources(self, query: str = "") -> str:
-    return """**Understanding BLS vs FRED Data Sources**
+from agno.tools import tool
 
-**BLS (Bureau of Labor Statistics):**
-- Official U.S. government source for labor statistics
-- Conducts surveys: CES (establishment), LAUS (household)
-- Generally considered the "source of truth" for employment data
-- Used by policymakers, media, and economists
+@tool
+def query_metric_data(query: str) -> str:
+    """Query health metric data by location, metric type, or year."""
+    # Parse query, filter data, return formatted results
+    return results
 
-**FRED (Federal Reserve Economic Data):**
-- Maintained by the Federal Reserve Bank of St. Louis
-- Aggregator/repository of economic data
-- Republishes BLS data for convenience
-- ALSO includes Fed-specific analyses and series
-- Adds value through: Maps API, custom calculations, seasonally adjusted series
+@tool
+def get_tract_info(tract_geoid: str) -> str:
+    """Get detailed information about a specific census tract."""
+    # Look up tract, return all metrics and years
+    return tract_info
 
-**Key Point:** 
-When FRED shows employment/unemployment data, it often originates from BLS 
-but is served through FRED's infrastructure. For this dashboard:
-- We use BLS directly for official labor market statistics
-- We use FRED for housing data (FHFA) and geographic mapping
-..."""
+@tool
+def find_extreme_values(query: str) -> str:
+    """Find tracts with highest or lowest values for a metric."""
+    # Parse for metric and extreme type, return top/bottom 5 tracts
+    return extreme_tracts
 ```
 
-This helps users understand data provenance—important for credibility.
-
-### Chatbot Functionality
-
-#### Integration with Streamlit
-
-I integrated the chatbot into the Streamlit dashboard using Streamlit's chat components:
-
-```python
-def display_chatbot_interface(bls_key: str, fred_key: str):
-    st.header("🤖 AI Economic Assistant")
-    
-    # Initialize chatbot (singleton pattern)
-    if "chatbot" not in st.session_state:
-        st.session_state.chatbot = BaltimoreEconomicChatbot(bls_key, fred_key)
-    
-    # Initialize chat history
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
-    
-    # Display previous messages
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-    
-    # Chat input
-    if user_input := st.chat_input("Ask me about Baltimore economic data..."):
-        # Add user message
-        st.session_state.chat_history.append({
-            "role": "user",
-            "content": user_input
-        })
-        
-        # Get bot response
-        with st.spinner("Thinking..."):
-            # CrewAI and AutoGen handle conversation context differently:
-            # - CrewAI: Context passed via task descriptions
-            # - AutoGen: Agents maintain conversation state internally
-            # No need for explicit history conversion
-            
-            response = st.session_state.chatbot.chat(user_input)
-        
-        # Add bot response
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": response
-        })
-        
-        # Rerun to show new messages
-        st.rerun()
-```
-
-**Key Features:**
-
-1. **Session State** - Maintains chatbot instance and conversation history across Streamlit reruns
-2. **Multi-Agent Processing** - CrewAI and AutoGen handle conversation context internally
-3. **Spinner** - Shows "Thinking..." while agents process (can take 2-5 seconds)
-4. **Markdown Rendering** - All responses are displayed as formatted markdown
-
-#### Fallback Mode
-
-Not everyone will have an OpenAI API key, so I implemented a fallback mode with keyword matching:
-
-```python
-def _simple_response(self, message: str) -> str:
-    """Fallback when agent isn't available"""
-    message_lower = message.lower()
-    
-    # Route to appropriate tool based on keywords
-    if any(word in message_lower for word in ['unemployment', 'jobless']):
-        return self._tool_get_unemployment()
-    elif any(word in message_lower for word in ['cpi', 'inflation']):
-        return self._tool_get_cpi()
-    elif any(word in message_lower for word in ['home price', 'housing']):
-        return self._tool_get_hpi()
-    # ... more conditions ...
-    else:
-        return """I can help you with Baltimore economic data! Ask me about:
-- Unemployment & labor market
-- Inflation & prices
-- Employment by industry
-- Home prices
-..."""
-```
-
-This ensures basic functionality even without AI, though responses are less intelligent.
-
-#### Example Conversation Flow
-
-**User:** "What's the unemployment situation in Baltimore?"
-
-**Agent Reasoning (internal):**
-1. Analyze query → user wants unemployment data
-2. Check available tools → `get_latest_unemployment` matches
-3. Execute tool → calls BLS API, gets latest LAUS data
-4. Format response → creates markdown with values and context
-
-**Agent Response:**
-```
-**Latest Labor Market Data (Baltimore-Columbia-Towson MSA)**
-- **Source:** BLS Local Area Unemployment Statistics (LAUS)
-- **Date:** 2024-09-01
-
-- **Unemployment Rate:** 3.2%
-- **Unemployed Persons:** 47,123
-- **Employed Persons:** 1,423,987
-- **Labor Force:** 1,471,110
-
-*Geographic Coverage: Baltimore City + Baltimore, Carroll, Anne Arundel, 
-Howard, Harford, Queen Anne's counties*
-```
-
-**User:** "How does that compare to housing prices?"
-
-**Agent Reasoning:**
-1. Recognize follow-up question (chat history provides context)
-2. Identify need for housing data → use `get_home_prices` tool
-3. Execute → calls FRED API for HPI
-4. Synthesize → connects unemployment (already discussed) with housing (new data)
-
-**Agent Response:**
-```
-**Home Price Index (Baltimore MSA)**
-- **HPI:** 245.67 (Base: 1995 Q1=100)
-- **Year-over-Year Change:** +5.3%
-
-The Baltimore MSA currently has relatively low unemployment (3.2%) alongside 
-rising home prices (+5.3% annually). This suggests a healthy economy with strong 
-housing demand. However, rising prices may create affordability challenges, 
-especially in a region where median household income has grown more slowly.
-```
-
-Notice how the agent:
-- Fetched real data from two different APIs
-- Provided source attribution
-- Made intelligent connections between metrics
-- Added interpretive context
-
-This level of sophistication isn't possible with traditional rule-based chatbots.
+These tools focus on census tract-level health metrics and provide quick, interactive responses for the health dashboard.
 
 ---
 
 ## Technical Implementation Details
+
+### Deployment Architecture
+
+**Economic Dashboard (CrewAI)**
+- Streamlit web interface with integrated chatbot
+- CrewAI multi-agent backend with task orchestration
+- Session-based conversation history
+- Deployed with: `streamlit run BLS_and_FRED_Data_Interface.py`
+
+**Health Dashboard (Agno)**
+- Integrated HTML dashboard with embedded chatbot
+- Flask server (port 5001) for agent API
+- SQLite database for conversation persistence
+- Deployed with: `python Baltimore_MetricsWithMap.py --server`
+
+### User Interface Design
+
+Both dashboards feature modern, accessible UI:
+- Clean gradient headers with branding
+- Professional color schemes (blue-purple gradients)
+- Responsive layouts that work on all screen sizes
+- Interactive quick-question buttons for common queries
+- Real-time status indicators (agent active/fallback mode)
+
+### Fallback Mode and Error Handling
+
+Both systems implement graceful fallback when AI agents are unavailable:
+
+**Keyword-Based Routing**: Matches user queries to appropriate tool functions
+**Clear Status Indicators**: UI shows "Agent Active" or "Fallback Mode"
+**Comprehensive Error Messages**: Guides users on how to enable AI features
 
 ### Project Structure
 
@@ -1387,25 +1328,32 @@ This ensures I always get data even when the latest period isn't published yet.
 
 **Problem:** Initially used LangChain for both dashboards, but needed more specialized agent architectures for different use cases.
 
-**Solution:** After research, I adopted two different frameworks:
-- **CrewAI for Economic Dashboard:** Role-based agents (Fetcher, Analyzer, Communicator) that collaborate
-- **AutoGen for Health Dashboard:** Conversational agents with function execution capabilities
+**Solution:** After research and testing, I adopted two different frameworks optimized for their specific needs:
+
+- **CrewAI for Economic Dashboard:** Role-based multi-agent collaboration ideal for complex analysis workflows
+- **Agno for Health Dashboard:** High-performance single-agent architecture optimized for fast interactive queries
 
 ```python
 # CrewAI Pattern (Economic Dashboard):
 from crewai import Agent, Task, Crew
 
-data_fetcher = Agent(role="Economic Data Fetcher", ...)
-crew = Crew(agents=[data_fetcher, analyzer, explainer], ...)
+agent = Agent(role="Economic Data Analyst", tools=tools, ...)
+crew = Crew(agents=[agent], tasks=[task], memory=True, embedder=embedder)
 
-# AutoGen Pattern (Health Dashboard):
-from autogen import AssistantAgent, UserProxyAgent
+# Agno Pattern (Health Dashboard):
+from agno.agent import Agent
+from agno.db.sqlite import SqliteDb
 
-assistant = AssistantAgent(name="BaltimoreHealthAssistant", ...)
-user_proxy = UserProxyAgent(name="UserProxy", function_map={...})
+agent = Agent(
+    name="BaltimoreHealthAssistant",
+    model=OpenAIChat(id="gpt-4o"),
+    tools=tools,
+    db=SqliteDb(db_file="data/chatbot.db"),
+    add_history_to_context=True
+)
 ```
 
-I also implemented graceful degradation so both dashboards work without the AI frameworks (using keyword-based fallback).
+Both systems implement graceful fallback modes when AI is unavailable.
 
 ### Challenge 4: BLS Period Code Parsing
 
@@ -1848,7 +1796,7 @@ The Baltimore Economic and Health Intelligence Dashboard demonstrates that:
 
 1. **Open data has immense value** - Government agencies collect extraordinary datasets, but their potential is unlocked only when made accessible
 
-2. **AI can democratize analysis** - The agentic chatbot allows anyone to ask sophisticated questions without learning SQL or Python
+2. **AI can democratize analysis** - Multi-agent frameworks (CrewAI for complex workflows, Agno for fast queries) allow anyone to ask sophisticated questions without learning SQL or Python
 
 3. **Geographic visualization matters** - Maps reveal patterns that tables and charts cannot, making inequality visible and concrete
 
@@ -1935,9 +1883,9 @@ Baltimore deserves data-driven, equitable, community-centered development. This 
 
 7. **Multi-Agent Framework Documentation**
    - CrewAI Documentation: https://docs.crewai.com/
-   - CrewAI GitHub: https://github.com/joaomdmoura/crewAI
-   - Microsoft AutoGen Documentation: https://microsoft.github.io/autogen/
-   - AutoGen GitHub: https://github.com/microsoft/autogen
+   - CrewAI GitHub: https://github.com/crewAIInc/crewAI
+   - Agno Documentation: https://docs.agno.com/
+   - Agno GitHub: https://github.com/agno-agi/agno
 
 8. **Pandas Documentation**
    - Pandas User Guide: https://pandas.pydata.org/docs/user_guide/index.html
@@ -2302,7 +2250,9 @@ This installs all required packages including:
 - plotly (visualization)
 - streamlit (web framework)
 - requests (API calls)
-- crewai & pyautogen (AI multi-agent frameworks)
+- crewai (Economic Dashboard AI)
+- agno (Health Dashboard AI)
+- flask, flask-cors (Health Dashboard server)
 
 ### Step 4: Configure API Keys
 
@@ -2346,8 +2296,11 @@ curl -o data/geo/gaz_tracts_24.txt \
 
 **Health Dashboard:**
 ```bash
-# Generate HTML
-python3 Baltimore_Metrics.py
+# Generate HTML dashboard
+python3 Baltimore_MetricsWithMap.py
+
+# Run with AI chatbot server (Flask on port 5001)
+python3 Baltimore_MetricsWithMap.py --server
 
 # Open in browser
 open output/dashboard_multi_year.html  # macOS
@@ -2357,30 +2310,24 @@ start output/dashboard_multi_year.html  # Windows
 
 **Economic Dashboard:**
 ```bash
-# Run Streamlit app
+# Run Streamlit app with AI chatbot
 streamlit run BLS_and_FRED_Data_Interface.py
 
 # Browser will auto-open to http://localhost:8501
 ```
 
-**With Chatbot Server:**
-```bash
-# Terminal 1: Run chatbot backend
-python3 Baltimore_Metrics.py --server
-
-# Terminal 2: Run Streamlit
-streamlit run BLS_and_FRED_Data_Interface.py
-```
-
 ### Troubleshooting
 
-**Issue: "ModuleNotFoundError: No module named 'crewai'" or "No module named 'autogen'"**
+**Issue: "ModuleNotFoundError: No module named 'crewai'" or "No module named 'agno'"**
 ```bash
 # For Economic Dashboard (CrewAI):
-pip install crewai crewai-tools
+pip install crewai>=0.28.0
 
-# For Health Dashboard (AutoGen):
-pip install pyautogen
+# For Health Dashboard (Agno):
+pip install agno>=2.2.0
+
+# For Flask server (Health Dashboard):
+pip install flask flask-cors
 ```
 
 **Issue: "API key not found"**

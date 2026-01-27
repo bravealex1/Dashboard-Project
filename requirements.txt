@@ -11,10 +11,9 @@ shapely>=2.0
 # For chatbot functionality (optional):
 # CrewAI for BLS_and_FRED_Data_Interface.py (multi-agent orchestration)
 crewai>=0.28.0
-crewai-tools>=0.2.0
 
-# AutoGen for Baltimore_MetricsWithMap.py (multi-agent conversations)
-pyautogen>=0.2.0
+# Agno for Baltimore_MetricsWithMap.py (multi-agent framework)
+agno>=2.2.0
 
 # For .env file support:
 python-dotenv>=1.0.0

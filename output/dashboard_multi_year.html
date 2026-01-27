@@ -3,16 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Baltimore City Health Dashboard with AI Chatbot</title>
+    <title>Baltimore City Health Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
+        * {
             margin: 0;
             padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             overflow: hidden;
-            background: #ffffff;
+            background: #f8f9fa;
+            color: #1a1a1a;
         }
         
         .dashboard-container {
@@ -21,35 +29,107 @@
             position: relative;
         }
         
+        /* Header Bar */
+        .header-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 70px;
+            background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 30px;
+        }
+        
+        .header-bar .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .header-bar .logo {
+            width: 45px;
+            height: 45px;
+            background: linear-gradient(135deg, #4299e1 0%, #667eea 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            font-weight: 700;
+        }
+        
+        .header-bar .title {
+            color: white;
+        }
+        
+        .header-bar .title h1 {
+            font-size: 22px;
+            font-weight: 600;
+            margin: 0;
+            letter-spacing: -0.3px;
+        }
+        
+        .header-bar .title p {
+            font-size: 13px;
+            color: #a0aec0;
+            margin: 0;
+            font-weight: 400;
+        }
+        
+        .header-bar .info-badge {
+            background: rgba(255,255,255,0.1);
+            padding: 8px 16px;
+            border-radius: 8px;
+            color: white;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .header-bar .info-badge i {
+            color: #4299e1;
+        }
+        
         /* Map Section */
         .map-section {
             flex: 1;
             position: relative;
-            transition: all 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            margin-top: 70px;
+            background: white;
         }
         
         .map-section.chat-open {
-            margin-right: 400px;
+            margin-right: 420px;
         }
         
         #plotly-map {
             width: 100%;
-            height: 100%;
+            height: calc(100vh - 70px);
+            background: white;
         }
         
         /* Chat Sidebar */
         #chatSidebar {
             position: fixed;
             right: 0;
-            top: 0;
-            width: 400px;
-            height: 100vh;
+            top: 70px;
+            width: 420px;
+            height: calc(100vh - 70px);
             background: white;
-            box-shadow: -2px 0 20px rgba(0,0,0,0.1);
-            transition: transform 0.3s ease;
+            box-shadow: -4px 0 24px rgba(0,0,0,0.06);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             z-index: 1000;
             display: flex;
             flex-direction: column;
+            border-left: 1px solid #e2e8f0;
         }
         
         #chatSidebar.collapsed {
@@ -59,157 +139,210 @@
         /* Toggle Button */
         #toggleChat {
             position: fixed;
-            right: 20px;
-            top: 20px;
+            right: 24px;
+            top: 88px;
             z-index: 1001;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #4299e1 0%, #667eea 100%);
             border: none;
             color: white;
-            width: 56px;
-            height: 56px;
+            width: 54px;
+            height: 54px;
             border-radius: 50%;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 20px rgba(66, 153, 225, 0.35);
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             display: flex;
             align-items: center;
             justify-content: center;
         }
         
         #toggleChat:hover {
-            transform: scale(1.1);
-            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 28px rgba(66, 153, 225, 0.45);
+        }
+        
+        #toggleChat:active {
+            transform: translateY(0);
         }
         
         #toggleChat i {
-            font-size: 24px;
+            font-size: 22px;
         }
         
         /* Chat Header */
         .chat-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
             color: white;
-            padding: 20px;
-            border-radius: 0;
+            padding: 24px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
         }
         
         .chat-header h5 {
-            margin: 0;
+            margin: 0 0 6px 0;
             font-weight: 600;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .chat-header h5 i {
+            color: #4299e1;
+        }
+        
+        .chat-header small {
+            color: #a0aec0;
+            font-size: 13px;
+            font-weight: 400;
         }
         
         /* Quick Questions */
         .quick-questions {
-            padding: 15px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #dee2e6;
+            padding: 18px 20px;
+            background: #f7fafc;
+            border-bottom: 1px solid #e2e8f0;
             overflow-x: auto;
             white-space: nowrap;
         }
         
         .quick-question-btn {
             display: inline-block;
-            padding: 8px 16px;
+            padding: 10px 18px;
             margin: 4px;
             background: white;
-            border: 1px solid #dee2e6;
-            border-radius: 20px;
+            border: 1.5px solid #cbd5e0;
+            border-radius: 24px;
             cursor: pointer;
-            transition: all 0.2s;
-            font-size: 0.85rem;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 13px;
+            font-weight: 500;
+            color: #4a5568;
         }
         
         .quick-question-btn:hover {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #4299e1 0%, #667eea 100%);
             color: white;
             border-color: transparent;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(66, 153, 225, 0.25);
         }
         
         /* Chat Messages */
         .chat-messages {
             flex: 1;
             overflow-y: auto;
-            padding: 20px;
-            background: #f8f9fa;
+            padding: 24px 20px;
+            background: #f7fafc;
         }
         
         .message {
-            margin-bottom: 15px;
-            animation: fadeIn 0.3s ease;
+            margin-bottom: 18px;
+            animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
+            from { opacity: 0; transform: translateY(12px); }
             to { opacity: 1; transform: translateY(0); }
         }
         
         .message-bubble {
-            padding: 12px 16px;
-            border-radius: 16px;
+            padding: 14px 18px;
+            border-radius: 18px;
             max-width: 85%;
             word-wrap: break-word;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .user-message {
+            display: flex;
+            justify-content: flex-end;
         }
         
         .user-message .message-bubble {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #4299e1 0%, #667eea 100%);
             color: white;
-            margin-left: auto;
             border-bottom-right-radius: 4px;
+            box-shadow: 0 2px 8px rgba(66, 153, 225, 0.25);
         }
         
         .bot-message .message-bubble {
             background: white;
-            border: 1px solid #dee2e6;
+            border: 1px solid #e2e8f0;
             border-bottom-left-radius: 4px;
+            color: #2d3748;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
         
         /* Chat Input */
         .chat-input {
             padding: 20px;
             background: white;
-            border-top: 1px solid #dee2e6;
+            border-top: 1px solid #e2e8f0;
         }
         
         .input-group {
             display: flex;
-            gap: 10px;
+            gap: 12px;
+            align-items: center;
         }
         
         .input-group input {
             flex: 1;
-            padding: 12px 16px;
-            border: 2px solid #dee2e6;
-            border-radius: 25px;
+            padding: 14px 20px;
+            border: 2px solid #e2e8f0;
+            border-radius: 28px;
             font-size: 14px;
             transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+            background: #f7fafc;
         }
         
         .input-group input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #4299e1;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+        }
+        
+        .input-group input::placeholder {
+            color: #a0aec0;
         }
         
         .input-group button {
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #4299e1 0%, #667eea 100%);
             color: white;
             border: none;
-            border-radius: 25px;
+            border-radius: 28px;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-weight: 600;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(66, 153, 225, 0.3);
         }
         
         .input-group button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 6px 20px rgba(66, 153, 225, 0.4);
+        }
+        
+        .input-group button:active {
+            transform: translateY(0);
+        }
+        
+        .input-group button i {
+            margin-left: 4px;
         }
         
         /* Loading */
         .loading {
             display: none;
             text-align: center;
-            padding: 10px;
-            color: #667eea;
+            padding: 12px;
+            color: #4299e1;
+            font-size: 14px;
+            font-weight: 500;
         }
         
         .loading i {
@@ -218,20 +351,40 @@
         
         /* Scrollbar */
         .chat-messages::-webkit-scrollbar {
-            width: 6px;
+            width: 8px;
         }
         
         .chat-messages::-webkit-scrollbar-track {
-            background: #f1f1f1;
+            background: #edf2f7;
+            border-radius: 4px;
         }
         
         .chat-messages::-webkit-scrollbar-thumb {
-            background: #667eea;
-            border-radius: 3px;
+            background: linear-gradient(135deg, #4299e1 0%, #667eea 100%);
+            border-radius: 4px;
+        }
+        
+        .chat-messages::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #3182ce 0%, #5a67d8 100%);
         }
     </style>
 </head>
 <body>
+    <!-- Header Bar -->
+    <div class="header-bar">
+        <div class="logo-section">
+            <div class="logo">B</div>
+            <div class="title">
+                <h1>Baltimore City Health Dashboard</h1>
+                <p>Community Health Metrics & Insights</p>
+            </div>
+        </div>
+        <div class="info-badge">
+            <i class="fas fa-database"></i>
+            <span>Data: 2018-2023 | 200+ Census Tracts</span>
+        </div>
+    </div>
+    
     <div class="dashboard-container">
         <!-- Map Section -->
         <div class="map-section" id="mapSection">
@@ -245,24 +398,24 @@
         </button>
         
         <!-- Chat Sidebar -->
-        <div id="chatSidebar">
+        <div id="chatSidebar" class="collapsed">
             <div class="chat-header">
-                <h5><i class="fas fa-robot me-2"></i>AI Assistant</h5>
+                <h5><i class="fas fa-robot"></i>AI Assistant</h5>
                 <small>Ask me about Baltimore's health data</small>
             </div>
             
             <div class="quick-questions">
                 <span class="quick-question-btn" onclick="sendQuickQuestion('Show me tracts with highest broadband access in 2023')">
-                    <i class="fas fa-wifi me-1"></i>📶 Broadband
+                    <i class="fas fa-wifi me-1"></i>Broadband Access
                 </span>
                 <span class="quick-question-btn" onclick="sendQuickQuestion('Which areas have lowest poverty rates?')">
-                    <i class="fas fa-chart-line me-1"></i>💰 Poverty
+                    <i class="fas fa-chart-line me-1"></i>Poverty Rates
                 </span>
                 <span class="quick-question-btn" onclick="sendQuickQuestion('Tell me about tract 24510010100')">
-                    <i class="fas fa-map-marker-alt me-1"></i>📍 Tract Info
+                    <i class="fas fa-map-marker-alt me-1"></i>Tract Lookup
                 </span>
                 <span class="quick-question-btn" onclick="sendQuickQuestion('What is the average education level?')">
-                    <i class="fas fa-graduation-cap me-1"></i>🎓 Education
+                    <i class="fas fa-graduation-cap me-1"></i>Education Level
                 </span>
             </div>
             
@@ -270,20 +423,25 @@
             <div class="chat-messages" id="chatMessages">
                     <div class="bot-message message">
                         <div class="message-bubble">
-                            <strong><i class="fas fa-robot me-1"></i>AI Assistant with Agent:</strong><br>
-                            Hello! I use the REAL BaltimoreHealthChatbot with LangChain agent.<br><br>
-                            <strong>🤖 Agent Capabilities:</strong><br>
-                            ✅ Find tracts with highest/lowest values<br>
-                            ✅ Look up specific census tracts<br>
-                            ✅ Calculate averages and statistics<br>
-                            ✅ Show historical trends (2018-2023)<br>
-                            ✅ Intelligent reasoning with GPT-4o<br><br>
-                            <strong>💡 Try asking:</strong><br>
-                            • "Show me tracts with highest broadband access in 2023"<br>
-                            • "What is the average poverty rate?"<br>
-                            • "Tell me about tract 24510010100"<br><br>
-                            <small>⚠️ <strong>Server Required:</strong> Make sure the server is running!<br>
-                            Run: <code>python3 Baltimore_MetricsWithMap.py --server</code></small>
+                            <strong style="color: #2d3748;">AI Assistant</strong><br>
+                            <p style="margin: 12px 0 16px 0; color: #4a5568;">Hello! I'm powered by GPT-4o and the Agno framework. I can help you explore Baltimore's health data across 200+ census tracts from 2018-2023.</p>
+                            <strong style="color: #2d3748; font-size: 13px;">What I can do:</strong><br>
+                            <ul style="margin: 8px 0; padding-left: 20px; color: #4a5568; font-size: 13px;">
+                                <li>Find tracts with highest/lowest metric values</li>
+                                <li>Look up specific census tract information</li>
+                                <li>Calculate statistics and averages</li>
+                                <li>Analyze historical trends</li>
+                            </ul>
+                            <strong style="color: #2d3748; font-size: 13px;">Try asking:</strong><br>
+                            <ul style="margin: 8px 0 0 0; padding-left: 20px; color: #4a5568; font-size: 13px;">
+                                <li>"Show me tracts with highest broadband access in 2023"</li>
+                                <li>"What is the average poverty rate?"</li>
+                                <li>"Tell me about tract 24510010100"</li>
+                            </ul>
+                            <div style="margin-top: 16px; padding: 12px; background: #f7fafc; border-radius: 8px; border-left: 3px solid #4299e1;">
+                                <small style="color: #4a5568;"><strong>Note:</strong> The AI assistant requires the server to be running.<br>
+                                Start with: <code style="background: white; padding: 2px 6px; border-radius: 4px; color: #2d3748;">python3 Baltimore_MetricsWithMap.py --server</code></small>
+                            </div>
                         </div>
                     </div>
             </div>
@@ -325,32 +483,44 @@
                     const welcomeMsg = document.querySelector('.bot-message .message-bubble');
                     if (status.agent_available) {
                         welcomeMsg.innerHTML = `
-                            <strong><i class="fas fa-robot me-1"></i>✅ AI Agent: ACTIVE</strong><br>
-                            Hello! I'm powered by GPT-4 with LangChain agent.<br><br>
-                            <strong>🤖 Agent Capabilities:</strong><br>
-                            ✅ Find tracts with highest/lowest values<br>
-                            ✅ Look up specific census tracts<br>
-                            ✅ Calculate averages and statistics<br>
-                            ✅ Show historical trends (2018-2023)<br>
-                            ✅ Intelligent reasoning with AI<br><br>
-                            <strong>💡 Try asking:</strong><br>
-                            • "Show me tracts with highest broadband access in 2023"<br>
-                            • "What is the average poverty rate?"<br>
-                            • "Tell me about tract 24510010100"
+                            <strong style="color: #2d3748;">AI Agent: Active</strong><br>
+                            <p style="margin: 12px 0 16px 0; color: #4a5568;">Hello! I'm powered by GPT-4o and the Agno framework. I can help you explore Baltimore's health data.</p>
+                            <strong style="color: #2d3748; font-size: 13px;">What I can do:</strong><br>
+                            <ul style="margin: 8px 0; padding-left: 20px; color: #4a5568; font-size: 13px;">
+                                <li>Find tracts with highest/lowest values</li>
+                                <li>Look up specific census tracts</li>
+                                <li>Calculate statistics and averages</li>
+                                <li>Analyze historical trends (2018-2023)</li>
+                            </ul>
+                            <strong style="color: #2d3748; font-size: 13px;">Try asking:</strong><br>
+                            <ul style="margin: 8px 0 0 0; padding-left: 20px; color: #4a5568; font-size: 13px;">
+                                <li>"Show me tracts with highest broadband access in 2023"</li>
+                                <li>"What is the average poverty rate?"</li>
+                                <li>"Tell me about tract 24510010100"</li>
+                            </ul>
                         `;
                     } else {
                         welcomeMsg.innerHTML = `
-                            <strong><i class="fas fa-exclamation-triangle me-1"></i>⚠️ Agent: FALLBACK MODE</strong><br>
-                            I'm using rule-based responses (AI agent not available).<br><br>
-                            <strong>Reason:</strong> ${status.agent_init_error || 'Unknown'}<br><br>
-                            <strong>I can still help with:</strong><br>
-                            ✅ Find tracts with highest/lowest values<br>
-                            ✅ Look up specific census tracts<br>
-                            ✅ Calculate averages and statistics<br>
-                            ✅ Show trends (2018-2023)<br><br>
-                            <small>💡 To enable AI agent:<br>
-                            1. Set OPENAI_API_KEY in .env file<br>
-                            2. Restart server: <code>python3 Baltimore_MetricsWithMap.py --server</code></small>
+                            <strong style="color: #c53030;">Agent: Fallback Mode</strong><br>
+                            <p style="margin: 12px 0; color: #4a5568;">I'm using rule-based responses. The AI agent is not available.</p>
+                            <div style="padding: 12px; background: #fff5f5; border-radius: 8px; border-left: 3px solid #fc8181; margin-bottom: 12px;">
+                                <strong style="color: #742a2a; font-size: 13px;">Reason:</strong><br>
+                                <small style="color: #4a5568;">${status.agent_init_error || 'Unknown error'}</small>
+                            </div>
+                            <strong style="color: #2d3748; font-size: 13px;">I can still help with:</strong><br>
+                            <ul style="margin: 8px 0; padding-left: 20px; color: #4a5568; font-size: 13px;">
+                                <li>Find tracts with highest/lowest values</li>
+                                <li>Look up specific census tracts</li>
+                                <li>Calculate averages and statistics</li>
+                                <li>Show trends (2018-2023)</li>
+                            </ul>
+                            <div style="margin-top: 12px; padding: 12px; background: #ebf8ff; border-radius: 8px; border-left: 3px solid #4299e1;">
+                                <strong style="color: #2c5282; font-size: 13px;">To enable AI agent:</strong><br>
+                                <ol style="margin: 8px 0 0 0; padding-left: 20px; color: #4a5568; font-size: 13px;">
+                                    <li>Set OPENAI_API_KEY in .env file</li>
+                                    <li>Restart: <code style="background: white; padding: 2px 6px; border-radius: 4px;">python3 Baltimore_MetricsWithMap.py --server</code></li>
+                                </ol>
+                            </div>
                         `;
                     }
                 }
