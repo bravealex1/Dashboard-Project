@@ -5,3 +5,4 @@ data/
 
 # Ignore local virtual environment
 .venv/
+.venv/
