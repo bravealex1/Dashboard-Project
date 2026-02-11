@@ -13,7 +13,7 @@ shapely>=2.0
 crewai>=0.28.0
 
 # Agno for Baltimore_MetricsWithMap.py (multi-agent framework)
-agno>=2.2.0
+agno
 
 # For .env file support:
 python-dotenv>=1.0.0
@@ -27,10 +27,3 @@ flask-cors>=4.0.0
 
 # For Streamlit dashboard (optional):
 streamlit>=1.38.0
-
-
-
-
-
-
-python
