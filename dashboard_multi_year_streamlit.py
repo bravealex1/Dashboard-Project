@@ -1006,7 +1006,7 @@ STATE_FIPS = "24"     # Maryland
 COUNTY_FIPS = "510"   # Baltimore City
 YEARS_DEFAULT = [2018, 2020, 2022, 2023]
 
-# Variable map: internal key -> (ACS subject var code, display label, is_percent)
+# internal key -> (ACS subject var code, label, is_percent)
 VARS: Dict[str, Tuple[str, str, bool]] = {
     "broadband_pct": ("S2801_C02_017E", "Broadband connection (%)", True),
     "child_poverty_pct": ("S1701_C03_002E", "Children in poverty (%)", True),
@@ -1015,8 +1015,6 @@ VARS: Dict[str, Tuple[str, str, bool]] = {
 
 CITY_CENTER = {"lat": 39.2992, "lon": -76.6094}
 
-CACHE_DIR = Path(".cache")
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 def census_subject_url(year: int) -> str:
     return f"https://api.census.gov/data/{year}/acs/acs5/subject"
@@ -1036,6 +1034,7 @@ def get_openai_api_key() -> Optional[str]:
     k = os.getenv("OPENAI_API_KEY", "").strip()
     return k or None
 
+
 def safe_float(x: Any) -> Optional[float]:
     try:
         if x is None:
@@ -1046,8 +1045,10 @@ def safe_float(x: Any) -> Optional[float]:
     except Exception:
         return None
 
+
 def tract_geoid(state: str, county: str, tract: str) -> str:
     return f"{str(state).zfill(2)}{str(county).zfill(3)}{str(tract).zfill(6)}"
+
 
 def clean_series_for_stats(s: pd.Series, is_percent: bool) -> pd.Series:
     s2 = pd.to_numeric(s, errors="coerce")
@@ -1081,6 +1082,7 @@ def fetch_acs_subject(var_code: str, year: int) -> pd.DataFrame:
 
     return df[["GEOID", "year", var_code]]
 
+
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
 def load_all_metrics(years: List[int]) -> pd.DataFrame:
     frames: List[pd.DataFrame] = []
@@ -1106,15 +1108,11 @@ def load_all_metrics(years: List[int]) -> pd.DataFrame:
 
 
 # =============================================================================
-# Centroids via TIGERweb — FIXED to use Census Tracts layer (0)
+# Centroids via TIGERweb — Census Tracts layer (0)
 # =============================================================================
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24 * 7)
 def fetch_centroids_for_baltimore_tracts() -> pd.DataFrame:
-    """
-    IMPORTANT FIX:
-    - Use TIGERweb/Tracts_Blocks MapServer layer 0 = Census Tracts
-      (Layer 2 is Blocks and won't match tract GEOIDs).
-    """
+    # Tracts_Blocks MapServer layers: layer 0 = Census Tracts, layer 2 = Blocks :contentReference[oaicite:3]{index=3}
     base = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Tracts_Blocks/MapServer/0/query"
     params = {
         "where": f"STATE='{STATE_FIPS}' AND COUNTY='{COUNTY_FIPS}'",
@@ -1143,7 +1141,7 @@ def fetch_centroids_for_baltimore_tracts() -> pd.DataFrame:
 
 
 # =============================================================================
-# Plot builders (Mapbox-based for Streamlit compatibility)
+# Plot builders (no marker.line; highlight via 2 traces)
 # =============================================================================
 def build_map_points(
     df_year: pd.DataFrame,
@@ -1153,8 +1151,6 @@ def build_map_points(
     show_diagnostics: bool = False,
 ) -> go.Figure:
     centroids = fetch_centroids_for_baltimore_tracts()
-
-    # Merge tract metrics to tract centroids (this should be non-empty now)
     m = df_year.merge(centroids, on="GEOID", how="inner").copy()
     m[var_code] = pd.to_numeric(m[var_code], errors="coerce")
 
@@ -1168,7 +1164,7 @@ def build_map_points(
             }
         )
 
-    # Base map: all tract points as visible dots
+    # Base dots (all tracts) — force visibility
     fig = px.scatter_mapbox(
         m,
         lat="lat",
@@ -1186,21 +1182,38 @@ def build_map_points(
     fig.update_layout(margin=dict(l=0, r=0, t=50, b=0))
     fig.update_layout(uirevision="keep")
 
-    # Force marker visibility (size + opacity)
-    fig.update_traces(marker=dict(size=10, opacity=0.85), selector=dict(type="scattermapbox"))
+    # Make sure markers always render and don't get culled by overlap
+    fig.update_traces(
+        marker=dict(size=10, opacity=0.85, allowoverlap=True),
+        selector=dict(type="scattermapbox"),
+    )
 
-    # Highlight selected community (tract)
+    # Selected tract highlight = two-layer approach (outline workaround) :contentReference[oaicite:4]{index=4}
     sel = m[m["GEOID"] == selected_geoid].copy()
     if not sel.empty:
+        # Bottom "halo" (bigger dark circle)
         fig.add_trace(
             go.Scattermapbox(
                 lat=sel["lat"],
                 lon=sel["lon"],
                 mode="markers",
-                marker=dict(size=20, opacity=1.0, symbol="star", line=dict(width=2)),
-                name="Selected tract",
+                marker=dict(size=26, color="black", opacity=0.95, allowoverlap=True),
+                hoverinfo="skip",
+                name="Selected (halo)",
+                showlegend=False,
+            )
+        )
+        # Top marker (smaller bright circle) + hover label
+        fig.add_trace(
+            go.Scattermapbox(
+                lat=sel["lat"],
+                lon=sel["lon"],
+                mode="markers",
+                marker=dict(size=18, color="white", opacity=1.0, allowoverlap=True),
                 hovertext=[f"Selected: {selected_geoid}"],
                 hoverinfo="text",
+                name="Selected tract",
+                showlegend=False,
             )
         )
 
@@ -1233,10 +1246,11 @@ def make_agent_if_possible() -> Optional[Any]:
         ],
     )
 
+
 def fallback_bot_answer(prompt: str) -> str:
     p = prompt.lower()
     if "data source" in p or ("where" in p and "data" in p):
-        return "Metrics are pulled from the U.S. Census Bureau ACS 5-year Subject Tables via the Census Data API."
+        return "Metrics are pulled from ACS 5-year Subject Tables via the Census Data API."
     return "Ask me about the dashboard, variables, or trends. Add OPENAI_API_KEY for richer answers."
 
 
@@ -1247,7 +1261,6 @@ def main() -> None:
     st.set_page_config(page_title="Baltimore Metrics Dashboard (Standalone)", layout="wide")
 
     st.title("Baltimore City — Multi-Year Metrics Dashboard")
-    st.caption("Fixed: dots + selected highlight should now appear reliably (tract centroids from TIGERweb Tracts layer).")
 
     with st.sidebar:
         st.header("Controls")
@@ -1272,16 +1285,14 @@ def main() -> None:
         st.error("No data loaded. Check network access or Census API availability.")
         st.stop()
 
-    # Clean values for stats (and more sensible color scales)
+    # Clean values for stats
     df[var_code] = clean_series_for_stats(df[var_code], is_percent=is_percent)
 
-    # Year selection for map
     col_a, col_b = st.columns([1, 1])
     with col_a:
         year_sel = st.selectbox("Map year", years, index=len(years) - 1)
     df_year = df[df["year"] == int(year_sel)].copy()
 
-    # Community (tract) selection
     available_geoids = sorted(df["GEOID"].dropna().unique().tolist())
     with col_b:
         geoid_sel = st.selectbox("Community (tract GEOID) to highlight", available_geoids, index=0)
@@ -1303,7 +1314,7 @@ def main() -> None:
                 use_container_width=True,
                 key=f"map_{var_key}_{year_sel}_{geoid_sel}",
             )
-            st.caption(f"Selected tract: {geoid_sel} (highlighted as a star)")
+            st.caption(f"Selected tract: {geoid_sel} (highlighted)")
         except Exception as e:
             st.error(f"Map rendering failed: {e}")
 
@@ -1312,7 +1323,7 @@ def main() -> None:
         fig_trend = build_trend(df, geoid_sel, var_code, var_label)
         st.plotly_chart(fig_trend, use_container_width=True, key=f"trend_{var_key}_{geoid_sel}")
 
-        st.subheader("Quick stats (cleaned)")
+        st.subheader("Quick stats")
         v = df_year[var_code].dropna()
         st.json(
             {
@@ -1332,9 +1343,7 @@ def main() -> None:
         st.session_state.agent = make_agent_if_possible()
 
     if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "assistant", "content": "Ask me about the dashboard, variables, or trends."}
-        ]
+        st.session_state.messages = [{"role": "assistant", "content": "Ask me about the dashboard, variables, or trends."}]
 
     for m in st.session_state.messages:
         with st.chat_message(m["role"]):
@@ -1363,3 +1372,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
