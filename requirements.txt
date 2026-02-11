@@ -33,4 +33,4 @@ streamlit>=1.38.0
 
 
 
-python-3.11
+python
