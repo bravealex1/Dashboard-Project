@@ -543,6 +543,426 @@
 
 
 
+# from __future__ import annotations
+
+# import json
+# import os
+# from pathlib import Path
+# from typing import Any, Dict, List, Optional, Tuple
+
+# import numpy as np
+# import pandas as pd
+# import plotly.express as px
+# import plotly.graph_objects as go
+# import requests
+# import streamlit as st
+
+# # -----------------------------
+# # Optional dotenv (local dev)
+# # -----------------------------
+# try:
+#     from dotenv import load_dotenv
+#     load_dotenv()
+# except Exception:
+#     pass
+
+# # -----------------------------
+# # Optional Agno (LLM agent)
+# # -----------------------------
+# try:
+#     from agno.agent import Agent
+#     from agno.models.openai import OpenAIChat
+#     AGNO_AVAILABLE = True
+# except Exception:
+#     AGNO_AVAILABLE = False
+#     Agent = None
+#     OpenAIChat = None
+
+
+# # =============================================================================
+# # CONFIG
+# # =============================================================================
+# STATE_FIPS = "24"     # Maryland
+# COUNTY_FIPS = "510"   # Baltimore City
+# YEARS_DEFAULT = [2018, 2020, 2022, 2023]
+
+# # Variable map: internal key -> (ACS subject var code, display label, is_percent)
+# VARS: Dict[str, Tuple[str, str, bool]] = {
+#     "broadband_pct": ("S2801_C02_017E", "Broadband connection (%)", True),
+#     "child_poverty_pct": ("S1701_C03_002E", "Children in poverty (%)", True),
+#     "hs_complete_pct": ("S1501_C02_014E", "High school completion, 25+ (%)", True),
+# }
+
+# CITY_CENTER = {"lat": 39.2992, "lon": -76.6094}
+
+# CACHE_DIR = Path(".cache")
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# def census_subject_url(year: int) -> str:
+#     return f"https://api.census.gov/data/{year}/acs/acs5/subject"
+
+
+# # =============================================================================
+# # Utilities
+# # =============================================================================
+# def get_openai_api_key() -> Optional[str]:
+#     # Streamlit secrets preferred
+#     try:
+#         if hasattr(st, "secrets") and "OPENAI_API_KEY" in st.secrets:
+#             k = str(st.secrets["OPENAI_API_KEY"]).strip()
+#             if k:
+#                 return k
+#     except Exception:
+#         pass
+#     # Env fallback
+#     k = os.getenv("OPENAI_API_KEY", "").strip()
+#     return k or None
+
+
+# def safe_float(x: Any) -> Optional[float]:
+#     try:
+#         if x is None:
+#             return None
+#         if isinstance(x, str) and x.strip() == "":
+#             return None
+#         return float(x)
+#     except Exception:
+#         return None
+
+
+# def tract_geoid(state: str, county: str, tract: str) -> str:
+#     return f"{str(state).zfill(2)}{str(county).zfill(3)}{str(tract).zfill(6)}"
+
+
+# def clean_series_for_stats(s: pd.Series, is_percent: bool) -> pd.Series:
+#     """
+#     Fix the -666666666 type issues by treating obvious sentinels/bad ranges as NaN.
+#     For percent metrics we keep only [0, 100].
+#     """
+#     s2 = pd.to_numeric(s, errors="coerce")
+
+#     # common sentinel / broken values
+#     s2 = s2.replace([-666666666, -999999999, 666666666, 999999999], np.nan)
+
+#     # percent sanity bounds
+#     if is_percent:
+#         s2 = s2.where((s2 >= 0) & (s2 <= 100), np.nan)
+
+#     return s2
+
+
+# # =============================================================================
+# # Data fetch (ACS) + caching
+# # =============================================================================
+# @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
+# def fetch_acs_subject(var_code: str, year: int) -> pd.DataFrame:
+#     """
+#     Fetch ACS subject variable at tract level for Baltimore City.
+#     Returns columns: GEOID, year, <var_code>
+#     """
+#     url = census_subject_url(year)
+#     params = {
+#         "get": f"NAME,{var_code}",
+#         "for": "tract:*",
+#         "in": f"state:{STATE_FIPS} county:{COUNTY_FIPS}",
+#     }
+#     r = requests.get(url, params=params, timeout=60)
+#     r.raise_for_status()
+
+#     payload = r.json()
+#     header, rows = payload[0], payload[1:]
+#     df = pd.DataFrame(rows, columns=header)
+
+#     df[var_code] = df[var_code].apply(safe_float)
+#     df["year"] = int(year)
+#     df["GEOID"] = df.apply(lambda row: tract_geoid(row["state"], row["county"], row["tract"]), axis=1)
+
+#     return df[["GEOID", "year", var_code]]
+
+
+# @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
+# def load_all_metrics(years: List[int]) -> pd.DataFrame:
+#     frames: List[pd.DataFrame] = []
+#     for _, (var_code, _, _) in VARS.items():
+#         per_var: List[pd.DataFrame] = []
+#         for y in years:
+#             try:
+#                 per_var.append(fetch_acs_subject(var_code, y))
+#             except Exception:
+#                 continue
+#         if per_var:
+#             frames.append(pd.concat(per_var, ignore_index=True))
+
+#     if not frames:
+#         return pd.DataFrame(columns=["GEOID", "year"] + [v for v, _, _ in VARS.values()])
+
+#     out = frames[0]
+#     for nxt in frames[1:]:
+#         out = out.merge(nxt, on=["GEOID", "year"], how="outer")
+
+#     out = out[out["GEOID"].astype(str).str.startswith(STATE_FIPS + COUNTY_FIPS)]
+#     return out
+
+
+# # =============================================================================
+# # Centroids via TIGERweb (true lat/lon per tract/block layer fields)
+# # =============================================================================
+# @st.cache_data(show_spinner=False, ttl=60 * 60 * 24 * 7)
+# def fetch_centroids_for_baltimore_tracts() -> pd.DataFrame:
+#     """
+#     Pull tract-like centroid coordinates using TIGERweb feature service.
+#     """
+#     # TIGERweb Tracts/Blocks service (ArcGIS REST). Service index here: :contentReference[oaicite:1]{index=1}
+#     base = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Tracts_Blocks/MapServer/2/query"
+#     params = {
+#         "where": f"STATE='{STATE_FIPS}' AND COUNTY='{COUNTY_FIPS}'",
+#         "outFields": "GEOID,CENTLAT,CENTLON",
+#         "f": "json",
+#         "returnGeometry": "false",
+#     }
+#     r = requests.get(base, params=params, timeout=60)
+#     r.raise_for_status()
+#     data = r.json()
+
+#     feats = data.get("features", [])
+#     rows = []
+#     for f in feats:
+#         attrs = f.get("attributes", {})
+#         geoid = str(attrs.get("GEOID", "")).zfill(11)
+#         lat = safe_float(attrs.get("CENTLAT"))
+#         lon = safe_float(attrs.get("CENTLON"))
+#         if geoid and lat is not None and lon is not None:
+#             rows.append({"GEOID": geoid, "lat": lat, "lon": lon})
+
+#     df = pd.DataFrame(rows)
+#     df = df[df["GEOID"].str.startswith(STATE_FIPS + COUNTY_FIPS)]
+#     return df
+
+
+# # =============================================================================
+# # Plot builders
+# # =============================================================================
+# def build_map_points(
+#     df_year: pd.DataFrame,
+#     var_code: str,
+#     label: str,
+#     selected_geoid: str,
+# ) -> go.Figure:
+#     """
+#     Draw:
+#       - all tract points as visible dots
+#       - selected tract/community as a highlighted marker + label
+#     """
+#     centroids = fetch_centroids_for_baltimore_tracts()
+#     m = df_year.merge(centroids, on="GEOID", how="inner").copy()
+
+#     # Ensure numeric and clean for color scale
+#     m[var_code] = pd.to_numeric(m[var_code], errors="coerce")
+
+#     # Base layer: all points (explicit marker size so dots are visible)
+#     # Using px.scatter_map (tile-based, recommended replacement for scatter_mapbox). :contentReference[oaicite:2]{index=2}
+#     fig = px.scatter_map(
+#         m,
+#         lat="lat",
+#         lon="lon",
+#         color=var_code,
+#         hover_name="GEOID",
+#         hover_data={var_code: True, "lat": False, "lon": False},
+#         zoom=10,
+#         center=CITY_CENTER,
+#         height=600,
+#         title=label,
+#         color_continuous_scale="Viridis",
+#     )
+
+#     # Force dots to be clearly visible
+#     fig.update_traces(
+#         marker=dict(size=9, opacity=0.85),
+#         selector=dict(mode="markers"),
+#     )
+
+#     # Selected overlay (bigger + outlined)
+#     sel = m[m["GEOID"] == selected_geoid].copy()
+#     if not sel.empty:
+#         fig.add_trace(
+#             go.Scattermap(
+#                 lat=sel["lat"],
+#                 lon=sel["lon"],
+#                 mode="markers+text",
+#                 text=[f"Selected: {selected_geoid}"],
+#                 textposition="top center",
+#                 marker=dict(size=18, opacity=1.0, symbol="star", line=dict(width=2)),
+#                 hoverinfo="skip",
+#                 name="Selected community",
+#             )
+#         )
+
+#     # Map style + margins
+#     fig.update_layout(map_style="open-street-map")
+#     fig.update_layout(margin=dict(l=0, r=0, t=50, b=0))
+
+#     # Some Streamlit + Plotly map issues are fixed by forcing rerender via chart key,
+#     # but also keep UI stable on reruns:
+#     fig.update_layout(uirevision="keep")
+
+#     return fig
+
+
+# def build_trend(df: pd.DataFrame, geoid: str, var_code: str, label: str) -> go.Figure:
+#     sub = df[df["GEOID"] == geoid].sort_values("year").copy()
+#     fig = px.line(sub, x="year", y=var_code, markers=True, title=f"{label} — {geoid}", height=350)
+#     fig.update_layout(margin=dict(l=0, r=0, t=50, b=0))
+#     return fig
+
+
+# # =============================================================================
+# # Chatbot (Streamlit-native)
+# # =============================================================================
+# def make_agent_if_possible() -> Optional[Any]:
+#     if not AGNO_AVAILABLE:
+#         return None
+#     api_key = get_openai_api_key()
+#     if not api_key:
+#         return None
+#     os.environ["OPENAI_API_KEY"] = api_key
+#     return Agent(
+#         model=OpenAIChat(id="gpt-4o"),
+#         instructions=[
+#             "You are a helpful assistant embedded in a Baltimore City tract-level metrics dashboard.",
+#             "Be concise and practical.",
+#             "If asked about data: explain that metrics come from ACS 5-year Subject Tables via the Census API.",
+#         ],
+#     )
+
+
+# def fallback_bot_answer(prompt: str) -> str:
+#     p = prompt.lower()
+#     if "dot" in p or "map" in p:
+#         return "The map shows each census tract as a dot (centroid). You can select a tract and it will be highlighted."
+#     if "data source" in p or ("where" in p and "data" in p):
+#         return "Metrics are pulled from the U.S. Census Bureau ACS 5-year Subject Tables via the Census Data API."
+#     return "Ask me about the dashboard, variables, or how to interpret trends. Add OPENAI_API_KEY for richer answers."
+
+
+# # =============================================================================
+# # Streamlit App
+# # =============================================================================
+# def main() -> None:
+#     st.set_page_config(page_title="Baltimore Metrics Dashboard (Standalone)", layout="wide")
+
+#     st.title("Baltimore City — Multi-Year Metrics Dashboard")
+
+#     with st.sidebar:
+#         st.header("Controls")
+
+#         years = st.multiselect("Years", YEARS_DEFAULT, default=YEARS_DEFAULT)
+#         years = sorted(list(set(int(y) for y in years))) if years else YEARS_DEFAULT
+
+#         var_key = st.selectbox("Metric", list(VARS.keys()), index=0)
+#         var_code, var_label, is_percent = VARS[var_key]
+
+#         st.divider()
+#         st.subheader("Chat settings")
+#         use_llm = st.toggle("Use LLM (requires OPENAI_API_KEY)", value=True)
+
+#     with st.spinner("Loading metrics (cached)…"):
+#         df = load_all_metrics(years)
+
+#     if df.empty:
+#         st.error("No data loaded. Check network access or Census API availability.")
+#         st.stop()
+
+#     # Clean values (fix negative/sentinel) for stats + nicer color behavior
+#     df[var_code] = clean_series_for_stats(df[var_code], is_percent=is_percent)
+
+#     # Year selection for map
+#     col_a, col_b = st.columns([1, 1])
+#     with col_a:
+#         year_sel = st.selectbox("Map year", years, index=len(years) - 1)
+
+#     df_year = df[df["year"] == int(year_sel)].copy()
+
+#     # Pick a tract/community for highlighting + trend
+#     available_geoids = sorted(df["GEOID"].dropna().unique().tolist())
+#     with col_b:
+#         geoid_sel = st.selectbox("Community (tract GEOID) to highlight", available_geoids, index=0)
+
+#     left, right = st.columns([1.35, 1.0], gap="large")
+
+#     with left:
+#         st.subheader(f"Map: {var_label} ({year_sel})")
+#         try:
+#             fig_map = build_map_points(df_year, var_code, var_label, selected_geoid=geoid_sel)
+
+#             # IMPORTANT: key changes with selections to force Streamlit rerender. :contentReference[oaicite:3]{index=3}
+#             st.plotly_chart(
+#                 fig_map,
+#                 use_container_width=True,
+#                 key=f"map_{var_key}_{year_sel}_{geoid_sel}",
+#             )
+#         except Exception as e:
+#             st.warning(f"Map rendering failed. Details: {e}")
+
+#     with right:
+#         st.subheader("Trend")
+#         fig_trend = build_trend(df, geoid_sel, var_code, var_label)
+#         st.plotly_chart(fig_trend, use_container_width=True, key=f"trend_{var_key}_{geoid_sel}")
+
+#         st.subheader("Quick stats")
+#         v = df_year[var_code].dropna()
+#         stats = {
+#             "count": int(v.shape[0]),
+#             "min": float(v.min()) if not v.empty else None,
+#             "median": float(v.median()) if not v.empty else None,
+#             "max": float(v.max()) if not v.empty else None,
+#         }
+#         st.json(stats)
+
+#     st.divider()
+#     st.header("Chatbot")
+
+#     if "agent" not in st.session_state:
+#         st.session_state.agent = None
+#     if use_llm and st.session_state.agent is None:
+#         st.session_state.agent = make_agent_if_possible()
+
+#     if "messages" not in st.session_state:
+#         st.session_state.messages = [
+#             {"role": "assistant", "content": "Ask me about the dashboard, variables, or what the trends might mean."}
+#         ]
+
+#     for m in st.session_state.messages:
+#         with st.chat_message(m["role"]):
+#             st.write(m["content"])
+
+#     prompt = st.chat_input("Type your question…")
+#     if prompt:
+#         st.session_state.messages.append({"role": "user", "content": prompt})
+#         with st.chat_message("user"):
+#             st.write(prompt)
+
+#         with st.chat_message("assistant"):
+#             if use_llm and st.session_state.agent is not None:
+#                 try:
+#                     ctx = {"year": year_sel, "metric": var_label, "var_code": var_code, "selected_geoid": geoid_sel}
+#                     ans = st.session_state.agent.run(f"{prompt}\n\nContext: {json.dumps(ctx)}")
+#                     answer_text = getattr(ans, "content", None) or str(ans)
+#                 except Exception as e:
+#                     answer_text = f"LLM failed; using fallback. Error: {e}\n\n{fallback_bot_answer(prompt)}"
+#             else:
+#                 answer_text = fallback_bot_answer(prompt)
+
+#             st.write(answer_text)
+#             st.session_state.messages.append({"role": "assistant", "content": answer_text})
+
+
+# if __name__ == "__main__":
+#     main()
+
+
+
+
 from __future__ import annotations
 
 import json
@@ -598,7 +1018,6 @@ CITY_CENTER = {"lat": 39.2992, "lon": -76.6094}
 CACHE_DIR = Path(".cache")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-
 def census_subject_url(year: int) -> str:
     return f"https://api.census.gov/data/{year}/acs/acs5/subject"
 
@@ -607,7 +1026,6 @@ def census_subject_url(year: int) -> str:
 # Utilities
 # =============================================================================
 def get_openai_api_key() -> Optional[str]:
-    # Streamlit secrets preferred
     try:
         if hasattr(st, "secrets") and "OPENAI_API_KEY" in st.secrets:
             k = str(st.secrets["OPENAI_API_KEY"]).strip()
@@ -615,10 +1033,8 @@ def get_openai_api_key() -> Optional[str]:
                 return k
     except Exception:
         pass
-    # Env fallback
     k = os.getenv("OPENAI_API_KEY", "").strip()
     return k or None
-
 
 def safe_float(x: Any) -> Optional[float]:
     try:
@@ -630,25 +1046,14 @@ def safe_float(x: Any) -> Optional[float]:
     except Exception:
         return None
 
-
 def tract_geoid(state: str, county: str, tract: str) -> str:
     return f"{str(state).zfill(2)}{str(county).zfill(3)}{str(tract).zfill(6)}"
 
-
 def clean_series_for_stats(s: pd.Series, is_percent: bool) -> pd.Series:
-    """
-    Fix the -666666666 type issues by treating obvious sentinels/bad ranges as NaN.
-    For percent metrics we keep only [0, 100].
-    """
     s2 = pd.to_numeric(s, errors="coerce")
-
-    # common sentinel / broken values
     s2 = s2.replace([-666666666, -999999999, 666666666, 999999999], np.nan)
-
-    # percent sanity bounds
     if is_percent:
         s2 = s2.where((s2 >= 0) & (s2 <= 100), np.nan)
-
     return s2
 
 
@@ -657,10 +1062,6 @@ def clean_series_for_stats(s: pd.Series, is_percent: bool) -> pd.Series:
 # =============================================================================
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
 def fetch_acs_subject(var_code: str, year: int) -> pd.DataFrame:
-    """
-    Fetch ACS subject variable at tract level for Baltimore City.
-    Returns columns: GEOID, year, <var_code>
-    """
     url = census_subject_url(year)
     params = {
         "get": f"NAME,{var_code}",
@@ -679,7 +1080,6 @@ def fetch_acs_subject(var_code: str, year: int) -> pd.DataFrame:
     df["GEOID"] = df.apply(lambda row: tract_geoid(row["state"], row["county"], row["tract"]), axis=1)
 
     return df[["GEOID", "year", var_code]]
-
 
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
 def load_all_metrics(years: List[int]) -> pd.DataFrame:
@@ -706,20 +1106,22 @@ def load_all_metrics(years: List[int]) -> pd.DataFrame:
 
 
 # =============================================================================
-# Centroids via TIGERweb (true lat/lon per tract/block layer fields)
+# Centroids via TIGERweb — FIXED to use Census Tracts layer (0)
 # =============================================================================
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24 * 7)
 def fetch_centroids_for_baltimore_tracts() -> pd.DataFrame:
     """
-    Pull tract-like centroid coordinates using TIGERweb feature service.
+    IMPORTANT FIX:
+    - Use TIGERweb/Tracts_Blocks MapServer layer 0 = Census Tracts
+      (Layer 2 is Blocks and won't match tract GEOIDs).
     """
-    # TIGERweb Tracts/Blocks service (ArcGIS REST). Service index here: :contentReference[oaicite:1]{index=1}
-    base = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Tracts_Blocks/MapServer/2/query"
+    base = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Tracts_Blocks/MapServer/0/query"
     params = {
         "where": f"STATE='{STATE_FIPS}' AND COUNTY='{COUNTY_FIPS}'",
         "outFields": "GEOID,CENTLAT,CENTLON",
         "f": "json",
         "returnGeometry": "false",
+        "resultRecordCount": 100000,
     }
     r = requests.get(base, params=params, timeout=60)
     r.raise_for_status()
@@ -741,28 +1143,33 @@ def fetch_centroids_for_baltimore_tracts() -> pd.DataFrame:
 
 
 # =============================================================================
-# Plot builders
+# Plot builders (Mapbox-based for Streamlit compatibility)
 # =============================================================================
 def build_map_points(
     df_year: pd.DataFrame,
     var_code: str,
     label: str,
     selected_geoid: str,
+    show_diagnostics: bool = False,
 ) -> go.Figure:
-    """
-    Draw:
-      - all tract points as visible dots
-      - selected tract/community as a highlighted marker + label
-    """
     centroids = fetch_centroids_for_baltimore_tracts()
-    m = df_year.merge(centroids, on="GEOID", how="inner").copy()
 
-    # Ensure numeric and clean for color scale
+    # Merge tract metrics to tract centroids (this should be non-empty now)
+    m = df_year.merge(centroids, on="GEOID", how="inner").copy()
     m[var_code] = pd.to_numeric(m[var_code], errors="coerce")
 
-    # Base layer: all points (explicit marker size so dots are visible)
-    # Using px.scatter_map (tile-based, recommended replacement for scatter_mapbox). :contentReference[oaicite:2]{index=2}
-    fig = px.scatter_map(
+    if show_diagnostics:
+        st.write(
+            {
+                "centroids_rows": int(len(centroids)),
+                "df_year_rows": int(len(df_year)),
+                "merged_rows": int(len(m)),
+                "selected_in_merged": bool((m["GEOID"] == selected_geoid).any()),
+            }
+        )
+
+    # Base map: all tract points as visible dots
+    fig = px.scatter_mapbox(
         m,
         lat="lat",
         lon="lon",
@@ -775,36 +1182,27 @@ def build_map_points(
         title=label,
         color_continuous_scale="Viridis",
     )
+    fig.update_layout(mapbox_style="open-street-map")
+    fig.update_layout(margin=dict(l=0, r=0, t=50, b=0))
+    fig.update_layout(uirevision="keep")
 
-    # Force dots to be clearly visible
-    fig.update_traces(
-        marker=dict(size=9, opacity=0.85),
-        selector=dict(mode="markers"),
-    )
+    # Force marker visibility (size + opacity)
+    fig.update_traces(marker=dict(size=10, opacity=0.85), selector=dict(type="scattermapbox"))
 
-    # Selected overlay (bigger + outlined)
+    # Highlight selected community (tract)
     sel = m[m["GEOID"] == selected_geoid].copy()
     if not sel.empty:
         fig.add_trace(
-            go.Scattermap(
+            go.Scattermapbox(
                 lat=sel["lat"],
                 lon=sel["lon"],
-                mode="markers+text",
-                text=[f"Selected: {selected_geoid}"],
-                textposition="top center",
-                marker=dict(size=18, opacity=1.0, symbol="star", line=dict(width=2)),
-                hoverinfo="skip",
-                name="Selected community",
+                mode="markers",
+                marker=dict(size=20, opacity=1.0, symbol="star", line=dict(width=2)),
+                name="Selected tract",
+                hovertext=[f"Selected: {selected_geoid}"],
+                hoverinfo="text",
             )
         )
-
-    # Map style + margins
-    fig.update_layout(map_style="open-street-map")
-    fig.update_layout(margin=dict(l=0, r=0, t=50, b=0))
-
-    # Some Streamlit + Plotly map issues are fixed by forcing rerender via chart key,
-    # but also keep UI stable on reruns:
-    fig.update_layout(uirevision="keep")
 
     return fig
 
@@ -835,14 +1233,11 @@ def make_agent_if_possible() -> Optional[Any]:
         ],
     )
 
-
 def fallback_bot_answer(prompt: str) -> str:
     p = prompt.lower()
-    if "dot" in p or "map" in p:
-        return "The map shows each census tract as a dot (centroid). You can select a tract and it will be highlighted."
     if "data source" in p or ("where" in p and "data" in p):
         return "Metrics are pulled from the U.S. Census Bureau ACS 5-year Subject Tables via the Census Data API."
-    return "Ask me about the dashboard, variables, or how to interpret trends. Add OPENAI_API_KEY for richer answers."
+    return "Ask me about the dashboard, variables, or trends. Add OPENAI_API_KEY for richer answers."
 
 
 # =============================================================================
@@ -852,7 +1247,7 @@ def main() -> None:
     st.set_page_config(page_title="Baltimore Metrics Dashboard (Standalone)", layout="wide")
 
     st.title("Baltimore City — Multi-Year Metrics Dashboard")
-    st.caption("Standalone Streamlit app. The map now shows visible dots + highlights the selected community.")
+    st.caption("Fixed: dots + selected highlight should now appear reliably (tract centroids from TIGERweb Tracts layer).")
 
     with st.sidebar:
         st.header("Controls")
@@ -862,6 +1257,9 @@ def main() -> None:
 
         var_key = st.selectbox("Metric", list(VARS.keys()), index=0)
         var_code, var_label, is_percent = VARS[var_key]
+
+        st.divider()
+        show_diag = st.toggle("Show diagnostics (debug)", value=False)
 
         st.divider()
         st.subheader("Chat settings")
@@ -874,17 +1272,16 @@ def main() -> None:
         st.error("No data loaded. Check network access or Census API availability.")
         st.stop()
 
-    # Clean values (fix negative/sentinel) for stats + nicer color behavior
+    # Clean values for stats (and more sensible color scales)
     df[var_code] = clean_series_for_stats(df[var_code], is_percent=is_percent)
 
     # Year selection for map
     col_a, col_b = st.columns([1, 1])
     with col_a:
         year_sel = st.selectbox("Map year", years, index=len(years) - 1)
-
     df_year = df[df["year"] == int(year_sel)].copy()
 
-    # Pick a tract/community for highlighting + trend
+    # Community (tract) selection
     available_geoids = sorted(df["GEOID"].dropna().unique().tolist())
     with col_b:
         geoid_sel = st.selectbox("Community (tract GEOID) to highlight", available_geoids, index=0)
@@ -894,16 +1291,21 @@ def main() -> None:
     with left:
         st.subheader(f"Map: {var_label} ({year_sel})")
         try:
-            fig_map = build_map_points(df_year, var_code, var_label, selected_geoid=geoid_sel)
-
-            # IMPORTANT: key changes with selections to force Streamlit rerender. :contentReference[oaicite:3]{index=3}
+            fig_map = build_map_points(
+                df_year=df_year,
+                var_code=var_code,
+                label=var_label,
+                selected_geoid=geoid_sel,
+                show_diagnostics=show_diag,
+            )
             st.plotly_chart(
                 fig_map,
                 use_container_width=True,
                 key=f"map_{var_key}_{year_sel}_{geoid_sel}",
             )
+            st.caption(f"Selected tract: {geoid_sel} (highlighted as a star)")
         except Exception as e:
-            st.warning(f"Map rendering failed. Details: {e}")
+            st.error(f"Map rendering failed: {e}")
 
     with right:
         st.subheader("Trend")
@@ -912,13 +1314,14 @@ def main() -> None:
 
         st.subheader("Quick stats (cleaned)")
         v = df_year[var_code].dropna()
-        stats = {
-            "count": int(v.shape[0]),
-            "min": float(v.min()) if not v.empty else None,
-            "median": float(v.median()) if not v.empty else None,
-            "max": float(v.max()) if not v.empty else None,
-        }
-        st.json(stats)
+        st.json(
+            {
+                "count": int(v.shape[0]),
+                "min": float(v.min()) if not v.empty else None,
+                "median": float(v.median()) if not v.empty else None,
+                "max": float(v.max()) if not v.empty else None,
+            }
+        )
 
     st.divider()
     st.header("Chatbot")
@@ -930,7 +1333,7 @@ def main() -> None:
 
     if "messages" not in st.session_state:
         st.session_state.messages = [
-            {"role": "assistant", "content": "Ask me about the dashboard, variables, or what the trends might mean."}
+            {"role": "assistant", "content": "Ask me about the dashboard, variables, or trends."}
         ]
 
     for m in st.session_state.messages:
