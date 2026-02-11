@@ -619,7 +619,7 @@ from streamlit.components.v1 import html
 
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_HTML_PATH = "/Users/qiuhaozhu/Desktop/Capstone_Project_Dashboard/output/dashboard_multi_year.html"
+DEFAULT_HTML_PATH = "output/dashboard_multi_year.html"
 
 
 def load_dashboard_html(html_path: Path) -> str:
